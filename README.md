@@ -79,10 +79,6 @@ with the customer's `email`, the `sku` being ordered and the `quantity`:
 {"value": {"email": "a@b.com", "sku": "SK01", "quantity": 1}}
 ```
 
-Tansu uses a `record` table to store messages that are produced to the broker.
-The table is [partitioned](https://www.postgresql.org/docs/current/ddl-partitioning.html)
-by `topic` and `partition` effectively making each a separate table.
-
 An `order_request` represents the JSON message, with the `topic`, `partition`
 and message `offset_id` referencing the original `record`:
 
@@ -97,6 +93,10 @@ create table order_request (
     quantity int
 );
 ```
+
+Tansu uses a `record` table to store messages that are produced to the broker.
+The table is [partitioned](https://www.postgresql.org/docs/current/ddl-partitioning.html)
+by `topic` and `partition` effectively making each a separate table.
 
 We can use a [trigger](https://www.postgresql.org/docs/18/sql-createtrigger.html) on the `record` table
 to populate the `order_request` table as each record is inserted on the `accept` topic:
