@@ -1,0 +1,31 @@
+---
+services:
+  tansu:
+    image: ghcr.io/tansu-io/tansu
+    environment:
+      ADVERTISED_LISTENER_URL: tcp://localhost:9092
+      RUST_BACKTRACE: 1
+      RUST_LOG: warn
+      STORAGE_ENGINE: postgres://postgres:postgres@primary
+    ports:
+      - 9092:9092
+    depends_on:
+      primary:
+        condition: service_healthy
+  primary:
+    image: postgres:18
+    environment:
+      PGUSER: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    command: -c wal_level=logical -c log_min_messages=notice
+    volumes:
+      - primary:/var/lib/postgresql
+      - ./etc/primary/:/docker-entrypoint-initdb.d/
+    healthcheck:
+      test: /usr/bin/pg_isready
+      interval: 5s
+      timeout: 10s
+      retries: 5
+volumes:
+  primary:
+    driver: local
