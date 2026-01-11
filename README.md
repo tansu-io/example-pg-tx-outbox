@@ -137,7 +137,7 @@ end;
 $$ LANGUAGE plpgsql;
 ```
 
-Adding the trigger to the Tansu `record` table:
+Adding the trigger on `INSERT` to the Tansu `record` table:
 
 ```sql
 create trigger tansu_record_insert
@@ -152,6 +152,9 @@ a message will be produced on the `accept` topic containing a `ref` for the orde
 {"ref": "019bacac-2841-7982-998c-6a7b8d2d1ac4"}
 ```
 If there is insufficient stock or the customer is not of good standing no message will be produced to the `accept` topic.
+
+We can use another [trigger](https://www.postgresql.org/docs/18/sql-createtrigger.html) on the `order_request` table.
+This can update the stock level, check the good standing of the customer **and** produce a message to the `accept` topic:
 
 ```sql
 create or replace function on_order_request_insert() returns trigger as $$
@@ -168,8 +171,6 @@ begin
     and stock.quantity >= new.quantity;
 
     if FOUND then
-        RAISE NOTICE 'order: accepted';
-
         declare
             partition_num int;
             ext_ref uuid;
