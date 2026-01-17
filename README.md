@@ -11,17 +11,21 @@
 In [Tansu](https://github.com/tansu-io/tansu), the storage engine is used to store both the messages and the Kafka-compatible metadata.
 That same storage engine (the database) can also store the business entities related to the messages.
 
-If that is the case, then using lightweight triggers allow us to react to Kafka messages by performing checks, updating a business entity database table, and producing a resulting Kafka message all in a **single, atomic transation**. 
+If that is the case,
+then using lightweight triggers allow us to react to Kafka messages by performing checks,
+updating a business entity database table,
+and producing a resulting Kafka message all in a **single, atomic transaction**. 
 
 For example, in an online shop, we could:
 - check stock availability
 - check whether the customer is of good standing
 - persist the acceptance of the order
 - update the new (reduced) stock
-- **and** produce a message to a Kafka topic (signalling that the order has been accepted)
+- **and** produce a message to a Kafka topic (signaling that the order has been accepted)
 all in a single, atomic transaction.
 
 The following 20-line SQL pseudocode roughly illustrates this:
+
 ```sql
 update stock
 set quantity = quantity - order_request.quantity
@@ -33,28 +37,93 @@ and not(c.blocked)
 and stock.quantity >= order_request.quantity;
 
 if FOUND then
-    -- at least one row was updated. This means we had enough stock and customer was of good standing, accept the order:
+    -- A row was updated.
+    -- This means we had enough stock and customer is of good standing,
+    -- Accept the order:
+    --   1. insert a row into order_status as 'accepted'
+    --   2. queue a message on the 'order_accepted' topic with an order reference
     insert into order_status (order_request, status)
     values (new.id, 'accepted')
     returning order_status.ext_ref into ext_ref;
     
-    -- produce a message to the order 'accept' topic:
-    perform produce_message('accept', partition_num, null, format('{"ref": "%s"}');
+    -- produce a message to the order 'accept_accepted' topic:
+    perform produce_message('order_accepted', partition_num, null, format('{"ref": "%s"}', ext_ref));
 else
-    -- no row was updated. We either did not have enough stock, or the customer was of bad standing:
+    -- No row was updated.
+    -- We either did not have enough stock, or the customer is of bad standing.
+    -- Reject the order by only updating its status
     insert into order_status (order_request, status)
     values (new.id, 'rejected');
 end if;
 ```
 
-If you were do to this with regular Kafka, you'd have to use something like the [Transactional Outbox](https://microservices.io/patterns/data/transactional-outbox.html) - a pattern typically used when a command must update the database and send messages in an atomic way (in order to avoid data inconsistencies and bugs).
+> 💡 If you were do to this with regular Kafka, you'd have to use something like the [Transactional Outbox](https://microservices.io/patterns/data/transactional-outbox.html) - a pattern typically used when a command must update the database and send messages in an atomic way (in order to avoid data inconsistencies and bugs).
 
 In Tansu, updating a business entity and sending a message atomically is just an `UPDATE` and `INSERT` inside a regular database transaction (atomic by definition).
-No more complexity.  No need for other moving parts that need to be monitored 24/7, like a latency inducing service polling an `OUTBOX` table to forward messages to the broker.
+No more complexity.  No need for other moving parts that need to be monitored 24/7, with a latency inducing service polling an `OUTBOX` table forwarding messages to the broker.
 
 # The Steps
 
-Let's use an online shop as the example. The products available are represented by the `product` table:
+Let's use an online shop as the example.
+
+Main entities:
+
+- **product**: Stores available products with SKU and description
+- **stock**: Tracks inventory quantity for each product
+- **customer**: Registered customers with email and blocked status
+- **order_request**: Orders from the "order_json" and "order_xml" topics, linking customers to products
+- **order_status**: Status tracking for each order with external reference UUID
+- **record**: Referenced table (topition, offset_id) that appears to track message offsets
+
+```mermaid
+erDiagram
+    product ||--o{ stock : "has stock levels"
+    product ||--o{ order_request : "ordered in"
+    customer ||--o{ order_request : "places"
+    order_request ||--o{ order_status : "has status"
+    record ||--o{ order_request : "sources from"
+
+    product {
+        int id PK "generated always as identity"
+        text sku UK "not null"
+        text description
+    }
+
+    stock {
+        int id PK "generated always as identity"
+        int product FK "not null, references product(id)"
+        int quantity
+    }
+
+    customer {
+        int id PK "generated always as identity"
+        text email UK "not null"
+        bool blocked "not null"
+    }
+
+    order_request {
+        int id PK "generated always as identity"
+        int topition FK "references record"
+        bigint offset_id FK "references record"
+        int customer FK "references customer(id)"
+        int product FK "references product(id)"
+        int quantity
+    }
+
+    order_status {
+        int id PK "generated always as identity"
+        int order_request FK "references order_request(id)"
+        uuid ext_ref UK "default uuidv7()"
+        text status
+    }
+
+    record {
+        int topition PK
+        bigint offset_id PK
+    }
+```
+
+The products available are represented by the `product` table:
 
 ```sql
 create table product (
@@ -86,7 +155,7 @@ create table customer (
 );
 ```
 
-An order is placed by producing a JSON message onto the `order` topic,
+An order is placed by producing a JSON message onto the `order_json` topic,
 with the customer's `email`, the `sku` being ordered and the `quantity`:
 
 ```json
@@ -114,7 +183,8 @@ We can use a [trigger](https://www.postgresql.org/docs/18/sql-createtrigger.html
 
 1. Create the function with the appropriate `order_request` conditional logic
 ```sql
--- Writing to the `order` topic will populate the `order_request` table; Writing to any other topic will be a no-op
+-- Writing to the `order_json` or `order_xml` topics will populate the `order_request` table
+-- Writing to any other topic will be a no-op
 create or replace function on_tansu_record_insert() returns trigger as $$
 declare
     topic_name text;
@@ -125,7 +195,7 @@ begin
     join topition tp on tp.topic = t.id
     where tp.id = new.topition;
 
-    if topic_name = 'order' then
+    if topic_name = 'order_json' then
         declare
             order_email text;
             order_sku text;
@@ -237,10 +307,10 @@ Prerequisites:
 
 [justfile](./justfile) contains recipes to run the example.
 
-Once you have the prerequisites installed, clone this repository and start everything up with:
+Once you have the prerequisites installed, clone this repository:
 
 ```shell
-git clone git@github.com:tansu-io/example-pg-tx-outbox.git
+git clone https://github.com/tansu-io/example-pg-tx-outbox.git
 cd example-pg-tx-outbox
 ```
 

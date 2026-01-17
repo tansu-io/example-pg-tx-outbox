@@ -5,7 +5,7 @@ from aiokafka import AIOKafkaConsumer
 
 async def consume():
     consumer = AIOKafkaConsumer(
-        "accept", bootstrap_servers="localhost:9092", group_id="my-group"
+        "accepted_orders", bootstrap_servers="localhost:9092", group_id="my-group"
     )
     # Get cluster layout and join group `my-group`
     await consumer.start()

@@ -15,7 +15,7 @@
 
 begin;
 
--- products that are available on th shop
+-- products that are available on the shop
 --
 create table product (
     id int generated always as identity primary key,
@@ -62,7 +62,6 @@ create table order_status (
     status text
 );
 
-
 -- products available for sale in shop
 --
 insert into product (sku, description) values ('SK01', 'Shoe');
@@ -91,7 +90,7 @@ begin
     join topition tp on tp.topic = t.id
     where tp.id = new.topition;
 
-    if topic_name = 'order' then
+    if topic_name = 'order_json' then
         declare
             order_email text;
             order_sku text;
@@ -110,6 +109,29 @@ begin
             where c.email = order_email
             and p.sku = order_sku;
         end;
+    elsif topic_name = 'order_xml' then
+        declare
+            document xml;
+            order_email text;
+            order_sku text;
+            order_quantity int;
+        begin
+            document = xmlparse (content convert_from(new.v, 'utf-8'));
+            order_email = (xpath('order/email/text()', document))[1];
+            order_sku = (xpath('order/sku/text()', document))[1];
+            order_quantity = (xpath('number(order/quantity/text())', document))[1]::text::int;
+
+            RAISE NOTICE 'order, from: %, sku: %, quantity: %', order_email, order_sku, order_quantity;
+
+            insert into order_request (topition, offset_id, customer, product, quantity)
+            select new.topition, new.offset_id, c.id, p.id, order_quantity
+            from customer c, product p
+            join stock s on s.product = p.id
+            where c.email = order_email
+            and p.sku = order_sku;
+        end;
+    else
+        raise notice 'ignored, topic: %, k: %, v: %', topic_name, new.k, new.v;
     end if;
     return new;
 end;
@@ -207,7 +229,7 @@ begin
             returning order_status.ext_ref into ext_ref;
 
             RAISE NOTICE 'ext_ref: %', ext_ref;
-            perform tansu_produce_message('accept', partition_num, null, format('{"ref": "%s"}', ext_ref::text)::bytea);
+            perform tansu_produce_message('accepted_orders', partition_num, null, format('{"ref": "%s"}', ext_ref::text)::bytea);
         end;
     else
         RAISE NOTICE 'order: rejected';

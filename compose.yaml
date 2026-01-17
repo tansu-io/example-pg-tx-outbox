@@ -3,15 +3,24 @@ services:
   tansu:
     image: ghcr.io/tansu-io/tansu
     environment:
-      ADVERTISED_LISTENER_URL: tcp://localhost:9092
+      ADVERTISED_LISTENER_URL: tcp://tansu:9092
       RUST_BACKTRACE: 1
       RUST_LOG: warn
       STORAGE_ENGINE: postgres://postgres:postgres@primary
-    ports:
-      - 9092:9092
     depends_on:
       primary:
         condition: service_healthy
+  proxy:
+    image: ghcr.io/tansu-io/tansu
+    environment:
+      ORIGIN_URL: tcp://tansu:9092
+      ADVERTISED_LISTENER_URL: tcp://localhost:9092
+      RUST_LOG: warn
+    command: ["proxy"]
+    ports:
+      - 9092:9092
+    links:
+      - tansu
   primary:
     image: postgres:18
     environment:
@@ -26,6 +35,9 @@ services:
       interval: 5s
       timeout: 10s
       retries: 5
+  kafka:
+    image: apache/kafka:4.1.1
+    command: /bin/sleep infinity
 volumes:
   primary:
     driver: local
