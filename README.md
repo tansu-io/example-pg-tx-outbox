@@ -64,16 +64,45 @@ No more complexity.  No need for other moving parts that need to be monitored 24
 
 # The Steps
 
-Let's use an online shop as the example.
+Let's use an **online shop** as an example, a **customer** can place an **order** for
+a **product** by producing a message to the *order_json* topic (for customers using JSON)
+or *order_xml*  topic (for customers using XML): 
 
-Main entities:
+## Order
+
+An order is placed by producing a JSON message onto the `order_json` topic,
+with the customer's `email`, the `sku` being ordered and the `quantity`:
+
+```json
+{"email": "a@b.com", "sku": "SK01", "quantity": 1}
+```
+
+An order can also be placed by producing a XML message onto the `order_xml` topic,
+with the customer's `email`, the `sku` being ordered and the `quantity`:
+
+```xml
+<order>
+  <email>a@b.com</email>
+  <sku>SK01</sku>
+  <quantity>1</quantity>
+</order>
+```
+
+## Database Schema
+
+The **online shop** has the following main entities database entities:
 
 - **product**: Stores available products with SKU and description
 - **stock**: Tracks inventory quantity for each product
 - **customer**: Registered customers with email and blocked status
 - **order_request**: Orders from the "order_json" and "order_xml" topics, linking customers to products
 - **order_status**: Status tracking for each order with external reference UUID
-- **record**: Referenced table (topition, offset_id) that appears to track message offsets
+
+We also need to reference one entity from the **tansu** schema:
+
+- **record**: Contains Kafka messages that have been produced to any topic, with their topic, partition and message offset
+
+### ER Diagram
 
 ```mermaid
 erDiagram
@@ -123,6 +152,8 @@ erDiagram
     }
 ```
 
+### DDL
+
 The products available are represented by the `product` table:
 
 ```sql
@@ -155,14 +186,7 @@ create table customer (
 );
 ```
 
-An order is placed by producing a JSON message onto the `order_json` topic,
-with the customer's `email`, the `sku` being ordered and the `quantity`:
-
-```json
-{"value": {"email": "a@b.com", "sku": "SK01", "quantity": 1}}
-```
-
-An `order_request` represents the JSON message, with the `topic`, `partition`
+An `order_request` represents a JSON or XML **order message**, with the `topic`, `partition`
 and message `offset_id` referencing the original Kafka `record`:
 
 ```sql
@@ -179,9 +203,15 @@ create table order_request (
 
 > 💡 Tansu uses a `record` table to store messages that are produced to the broker. The table is [partitioned](https://www.postgresql.org/docs/current/ddl-partitioning.html) by `topic` and `partition` effectively making each a separate table under the hood.
 
-We can use a [trigger](https://www.postgresql.org/docs/18/sql-createtrigger.html) on Tansu's `record` table to populate the `order_request` table as each record is inserted inside a particular topic. In our example, this input topic is called `order`.
+## Business Logic Trigger
+
+We can use a [trigger](https://www.postgresql.org/docs/18/sql-createtrigger.html)
+on Tansu's `record` table to populate the `order_request` table as each record is
+inserted inside a particular topic.
+In our example, this input topic is called `order_json` or `order_xml`. 
 
 1. Create the function with the appropriate `order_request` conditional logic
+
 ```sql
 -- Writing to the `order_json` or `order_xml` topics will populate the `order_request` table
 -- Writing to any other topic will be a no-op
@@ -205,6 +235,27 @@ begin
             order_email = json(new.v)->>'email';
             order_sku = json(new.v)->>'sku';
             order_quantity = (json(new.v)->>'quantity')::int;
+
+            -- insert the extracted data into an order request
+            insert into order_request (topition, offset_id, customer, product, quantity)
+            select new.topition, new.offset_id, c.id, p.id, order_quantity
+            from customer c, product p
+            join stock s on s.product = p.id
+            where c.email = order_email
+            and p.sku = order_sku;
+        end;
+    elsif topic_name = 'order_xml' then
+        declare
+            document xml;
+            order_email text;
+            order_sku text;
+            order_quantity int;
+        begin
+            -- extract the XML message data
+            document = xmlparse (content convert_from(new.v, 'utf-8'));
+            order_email = (xpath('order/email/text()', document))[1];
+            order_sku = (xpath('order/sku/text()', document))[1];
+            order_quantity = (xpath('number(order/quantity/text())', document))[1]::text::int;
 
             -- insert the extracted data into an order request
             insert into order_request (topition, offset_id, customer, product, quantity)
