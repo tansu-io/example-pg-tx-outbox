@@ -70,7 +70,7 @@ select-order-status: (psql-command "select * from order_status")
 select-product: (psql-command "select * from product order by sku")
 
 [doc("list all stock")]
-select-stock: (psql-command "select * from stock order by product")
+select-stock: (psql-command "select p.sku, s.quantity from product p join stock s on s.product = p.id order by p.sku")
 
 [private]
 primary-logs:

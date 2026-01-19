@@ -349,7 +349,6 @@ This repository contains a working example of:
 - the database schema outlined above for the `shop`
 - some sample data, including a customers of good and bad standing
 - the triggers on the `record` and `order_request` tables
-- a consumer using the [asyncio client for kafka](https://github.com/aio-libs/aiokafka) reading accepted orders from the `accept` topic
 
 Prerequisites:
 - **[docker](https://www.docker.com)**, using [compose.yaml](compose.yaml) which runs [tansu](https://tansu.io) and [PostgreSQL](https://www.postgresql.org)
@@ -365,25 +364,40 @@ git clone https://github.com/tansu-io/example-pg-tx-outbox.git
 cd example-pg-tx-outbox
 ```
 
-To start [PostgreSQL](https://www.postgresql.org) and [tansu](https://tansu.io) running as docker contains:
+To start [PostgreSQL](https://www.postgresql.org) and [tansu](https://tansu.io) running as docker containers:
 
 ```shell
 just
 ```
 
-Start the consumer on the `accept` topic with:
+
+Reading accepted orders from the `order_accepted` topic using **either**:
+
+- A consumer using the [Python asyncio client for kafka](https://github.com/aio-libs/aiokafka) reading accepted orders from the `order_accepted` topic
 
 ```shell
-just consumer
+just consumer-python
 ```
 
-In another shell, place an order with a customer of good standing:
+- **Or**, a consumer using the Kafka Java client CLI reading accepted orders from the `order_accepted` topic:
 
 ```shell
-just good-purchase
+just consumer-java
 ```
 
-Over of the `consumer` shell you should see output similar to:
+In another shell, place an order with a customer of good standing (with [Python asyncio client for kafka](https://github.com/aio-libs/aiokafka)):
+
+```shell
+just good-purchase-json
+```
+
+Or using, the Kafka Java client CLI with:
+
+```shell
+just good-purchase-xml
+```
+
+You can continue placing purchases with a customer of good standing under the stock for the product runs out. Over of the `consumer` shell you should see output similar to:
 
 ```shell
 consumed:  accept 0 0 None b'{"ref": "019bad18-16a9-7e0e-b759-0b68d6566133"}' 1768135595686
@@ -393,18 +407,56 @@ Where `ref` is an order reference that can be given to the customer.
 You can continue placing orders for the customer of good standing until the stock runs out (6 in total).
 At that point, no further messages should be produced to the `accept` topic.
 
-You can also place an order from a blocked customer with:
+You can also place an order from a blocked customer using ([Python asyncio client for kafka](https://github.com/aio-libs/aiokafka)):
 
 ```shell
-just blocked-purchase
+just blocked-purchase-json
 ```
 
-There should be no output on the `accept` topic for that customer.
-
-You can inspect the database using:
+Or using the Java CLI with XML using:
 
 ```shell
-just psql
+just blocked-purchase-xml
 ```
+
+There should be no output on the `order_accepted` topic for that customer.
+
+## Database
+
+View the order requests:
+
+```shell
+just select-order-request
+```
+
+The status of orders:
+
+```shell
+just select-order-status
+```
+
+The list of products:
+
+```shell
+just select-product
+```
+
+Stock level of products:
+
+```shell
+just select-stock
+```
+
+```text
+docker compose exec primary psql  --command "select p.sku, s.quantity from product p join stock s on s.product = p.id order by p.sku"
+ sku  | quantity 
+------+----------
+ SK01 |        5
+ SK02 |        3
+(2 rows)
+```
+
+
+---
 
 Want to try it out for yourself? Clone (and ⭐) Tansu at [https://github.com/tansu-io/tansu](https://github.com/tansu-io/tansu).
