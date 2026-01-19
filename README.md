@@ -370,20 +370,23 @@ To start [PostgreSQL](https://www.postgresql.org) and [tansu](https://tansu.io) 
 just
 ```
 
+## Consumer
 
-Reading accepted orders from the `order_accepted` topic using **either**:
+Read accepted orders from the `order_accepted` topic using **either**:
 
-- A consumer using the [Python asyncio client for kafka](https://github.com/aio-libs/aiokafka) reading accepted orders from the `order_accepted` topic
+A consumer using the [Python asyncio client for kafka](https://github.com/aio-libs/aiokafka) reading accepted orders from the `order_accepted` topic
 
 ```shell
 just consumer-python
 ```
 
-- **Or**, a consumer using the Kafka Java client CLI reading accepted orders from the `order_accepted` topic:
+**Or**, a consumer using the Kafka Java client CLI reading accepted orders from the `order_accepted` topic:
 
 ```shell
 just consumer-java
 ```
+
+## Producer
 
 In another shell, place an order with a customer of good standing (with [Python asyncio client for kafka](https://github.com/aio-libs/aiokafka)):
 
@@ -446,16 +449,6 @@ Stock level of products:
 ```shell
 just select-stock
 ```
-
-```text
-docker compose exec primary psql  --command "select p.sku, s.quantity from product p join stock s on s.product = p.id order by p.sku"
- sku  | quantity 
-------+----------
- SK01 |        5
- SK02 |        3
-(2 rows)
-```
-
 
 ---
 
