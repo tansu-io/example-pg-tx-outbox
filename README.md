@@ -352,10 +352,8 @@ This repository contains a working example of:
 
 Prerequisites:
 - **[docker](https://www.docker.com)**, using [compose.yaml](compose.yaml) which runs [tansu](https://tansu.io) and [PostgreSQL](https://www.postgresql.org)
-- **[just](https://github.com/casey/just)**, a handy way to save and run project-specific commands
+- **[just](https://github.com/casey/just)**, a handy way to save and run project-specific commands to run the example
 - **[uv](https://github.com/astral-sh/uv)**, an extremely fast Python package and project manager used to run the examples
-
-[justfile](./justfile) contains recipes to run the example.
 
 Once you have the prerequisites installed, clone this repository:
 
@@ -400,7 +398,7 @@ Or using, the Kafka Java client CLI with:
 just good-purchase-xml
 ```
 
-You can continue placing purchases with a customer of good standing under the stock for the product runs out. Over of the `consumer` shell you should see output similar to:
+Over on the `consumer` shell you should see output similar to:
 
 ```shell
 consumed:  accept 0 0 None b'{"ref": "019bad18-16a9-7e0e-b759-0b68d6566133"}' 1768135595686

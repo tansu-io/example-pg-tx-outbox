@@ -72,6 +72,9 @@ select-product: (psql-command "select * from product order by sku")
 [doc("list all stock")]
 select-stock: (psql-command "select p.sku, s.quantity from product p join stock s on s.product = p.id order by p.sku")
 
+[doc("restock")]
+restock: (psql-command "update stock set quantity = stock.quantity + 6 from product where stock.product = product.id and product.sku = 'SK01'")
+
 [private]
 primary-logs:
     docker compose logs primary
